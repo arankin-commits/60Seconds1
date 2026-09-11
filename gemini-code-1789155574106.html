@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bloom Repair: Stage 5</title>
+    <style>
+        :root {
+            --accent-red: #c30010; --white: #FFFFFF; --black: #000000;
+            --steel-gray: #777B7E; --wood-brown: #65350F; --dark-bg: #1a1c1e;
+        }
+
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
+            font-family: 'Courier New', Courier, monospace;
+            background-color: var(--black); color: var(--white); user-select: none;
+        }
+
+        /* --- SCREENS --- */
+        .screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: none; flex-direction: column; justify-content: center; align-items: center;
+            background-color: var(--dark-bg); z-index: 100;
+        }
+        #start-screen { display: flex; }
+
+        h1 { color: var(--accent-red); font-size: 48px; text-transform: uppercase; letter-spacing: 4px; }
+        .menu-btn {
+            background-color: transparent; color: var(--white); border: 2px solid var(--steel-gray);
+            padding: 15px 40px; margin: 10px; font-size: 20px; font-family: inherit; font-weight: bold;
+            cursor: pointer; text-transform: uppercase; transition: 0.2s;
+        }
+        .menu-btn:hover { background-color: var(--steel-gray); color: var(--black); }
+
+        /* --- GAME CONTAINERS --- */
+        #game-screen { position: absolute; width: 100%; height: 100%; display: none; }
+        #desk-view {
+            width: 100%; height: 100%; background: radial-gradient(circle at center, #3a2311, var(--wood-brown));
+            position: relative; display: flex; justify-content: center; align-items: center; z-index: 1;
+        }
+        #range-view { width: 100%; height: 100%; background: #ddd; position: relative; display: none; cursor: none; }
+
+        /* --- DESK ELEMENTS --- */
+        #mat {
+            width: 850px; height: 500px; background-color: #222; border: 4px solid #111;
+            position: relative; box-shadow: 0 20px 50px rgba(0,0,0,0.8); border-radius: 8px; z-index: 2;
+        }
+        
+        #gun-type-display {
+            position: absolute; top: 10px; left: 20px; color: rgba(255,255,255,0.3);
+            font-size: 24px; font-weight: bold; text-transform: uppercase; letter-spacing: 2px; pointer-events: none;
+        }
+
+        .snap-zone {
+            position: absolute; border: 2px dashed rgba(255,255,255,0.2);
+            display: flex; justify-content: center; align-items: center; color: rgba(255,255,255,0.2); font-weight: bold;
+            text-transform: uppercase; font-size: 11px; text-align: center; z-index: 3;
+        }
+
+        /* --- GUN PARTS --- */
+        .gun-part {
+            position: absolute; background-color: var(--steel-gray); border: 2px solid var(--black);
+            cursor: grab; display: flex; justify-content: center; align-items: center; font-size: 11px; font-weight: bold; color: rgba(255,255,255,0.5);
+            box-shadow: 2px 5px 10px rgba(0,0,0,0.5); z-index: 10; text-transform: uppercase; text-align: center;
+            --dirt-op: 1; 
+        }
+        .gun-part:active { cursor: grabbing; z-index: 50; }
+        
+        /* Visual States (No Text) */
+        .state-broken { 
+            border-color: var(--accent-red) !important; 
+            background-image: repeating-linear-gradient(45deg, rgba(200,0,0,0.4), rgba(200,0,0,0.4) 10px, transparent 10px, transparent 20px) !important; 
+        }
+        
+        /* Surface Grime (Stage 1 - Visible normally) */
+        .dirt-stage-1 { background-image: radial-gradient(circle, rgba(122, 62, 20, var(--dirt-op)) 30%, transparent 80%) !important; }
+        
+        /* Hidden Deep Dirt & Blockages (Only visible when lens is over it) */
+        .dirt-stage-2 { background-image: none; }
+        .dirt-stage-2.revealed { 
+            background-image: repeating-linear-gradient(90deg, rgba(0,0,0,var(--dirt-op)), transparent 2px) !important; 
+            border: 2px solid #ffca28 !important; box-shadow: 0 0 15px #ffca28 !important;
+        }
+        .dirt-stage-2.revealed::before { content: '🔍 DEEP DIRT'; position: absolute; color: #ffca28; background: #000; padding: 2px 5px; z-index: 20; font-size: 10px; }
+        
+        .dirt-stage-3 { background-image: none; }
+        .dirt-stage-3.revealed { 
+            background-image: radial-gradient(circle, rgba(0,0,0,var(--dirt-op)) 40%, transparent 60%) !important; 
+            border: 2px solid var(--accent-red) !important; box-shadow: 0 0 15px var(--accent-red) !important;
+        }
+        .dirt-stage-3.revealed::before { content: '🔍 BLOCKED'; position: absolute; color: var(--accent-red); background: #000; padding: 2px 5px; z-index: 20; font-size: 10px; }
+
+        /* --- TOOLS & BINS --- */
+        .desk-station { position: absolute; display: flex; justify-content: center; align-items: center; font-weight: bold; text-align: center; border-width: 4px; z-index: 5; }
+        
+        #scrap-bin { bottom: 20px; left: 20px; width: 120px; height: 120px; border-style: dashed; border-color: var(--accent-red); color: var(--accent-red); }
+        #parts-box { top: 20px; left: 20px; width: 120px; height: 120px; border-style: solid; border-color: #00ff00; color: #00ff00; background: rgba(0,255,0,0.1); cursor: pointer; }
+        #parts-box:active { background: rgba(0,255,0,0.3); }
+        
+        #water-bowl {
+            bottom: 20px; left: 160px; width: 120px; height: 100px;
+            background: radial-gradient(circle at bottom, #0055aa, #00aaff);
+            border: 4px solid #aaa; border-radius: 50% 50% 20% 20%; color: #fff; text-shadow: 1px 1px 0 #000;
+        }
+
+        /* Tool Rack */
+        #tool-rack { position: absolute; right: 20px; top: 20px; width: 140px; background: rgba(0,0,0,0.5); padding: 10px; border: 2px solid #555; display: flex; flex-direction: column; gap: 15px; z-index: 20; }
+        .tool-slot { height: 60px; position: relative; display: flex; justify-content: center; align-items: center;}
+        
+        .cleaning-tool {
+            position: absolute; width: 100px; height: 50px; cursor: grab; display: flex; justify-content: center; align-items: center;
+            font-weight: bold; color: #000; box-shadow: 0 5px 10px rgba(0,0,0,0.5); z-index: 30; border: 2px solid #000;
+        }
+        .cleaning-tool:active { cursor: grabbing; transform: scale(1.1); box-shadow: 0 10px 20px rgba(0,0,0,0.8); }
+
+        #tool-cloth { background-color: #eee; border-radius: 5px 20px 20px 5px; }
+        .cloth-damp { background-color: #88ccff !important; color: #004488 !important; }
+        #tool-brush { background: linear-gradient(90deg, #d4a373, #faedcd); border-radius: 5px; border-right: 10px dashed #65350F; }
+        #tool-pick { background: linear-gradient(90deg, #aaa, #fff); border-radius: 2px 20px 20px 2px; height: 20px; margin-top: 15px; }
+        #tool-rod { width: 160px; height: 12px; background: linear-gradient(90deg, #333 25%, #b5832a 25%, #fceb92); border-radius: 3px; }
+        
+        /* True Zoom Magnifying Glass */
+        #tool-mag { background: transparent; border: none; box-shadow: none; width: 70px; height: 70px; }
+        #tool-mag:active { transform: none; box-shadow: none; }
+        #mag-glass {
+            width: 70px; height: 70px; border-radius: 50%; border: 4px solid #444; background: rgba(200, 255, 255, 0.2);
+            overflow: hidden; position: relative; z-index: 2; box-shadow: inset 0 0 15px rgba(0,0,0,0.8), 0 5px 15px rgba(0,0,0,0.6);
+            backdrop-filter: blur(1px);
+        }
+        #mag-handle {
+            position: absolute; width: 40px; height: 14px; background: #65350F;
+            bottom: -15px; right: -15px; transform: rotate(45deg); border-radius: 3px; border: 2px solid #222; z-index: 1;
+        }
+        
+        /* The zoomed content inside the lens */
+        #mag-lens-content {
+            position: absolute; top: 0; left: 0; transform-origin: 0 0; display: none;
+            border: 2px solid #000; 
+        }
+
+        /* Brown Spots rendered in the Zoom Lens */
+        .lens-deep-dirt {
+            background-image: 
+                radial-gradient(circle, #5c3a21 20%, transparent 25%),
+                radial-gradient(circle, #4a2e15 15%, transparent 20%),
+                radial-gradient(circle, #3d220b 10%, transparent 15%) !important;
+            background-size: 30px 30px, 40px 40px, 25px 25px !important;
+            background-position: 0 0, 15px 15px, 5px 20px !important;
+        }
+
+        /* Blockage rendered in the Zoom Lens */
+        .lens-blocked {
+            background-image: radial-gradient(circle, #000 40%, transparent 60%) !important;
+            background-size: 40px 40px !important;
+            background-position: center !important;
+        }
+
+        /* HUD */
+        #hud { position: absolute; top: 20px; left: 160px; z-index: 10; display: flex; gap: 10px; pointer-events: none; }
+        .hud-element { background: rgba(0,0,0,0.8); padding: 10px; border: 1px solid var(--steel-gray); font-size: 20px; font-weight: bold; color: var(--white); }
+        .timer-text { color: var(--accent-red); }
+        .score-text { color: #ffd700; }
+        
+        #instruction-text {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            background: rgba(0,0,0,0.8); padding: 10px 20px; border: 1px solid var(--steel-gray); font-size: 16px; font-weight: bold; z-index: 10; pointer-events: none;
+        }
+
+        #submit-gun-btn {
+            position: absolute; bottom: 20px; right: 20px; padding: 20px 40px; font-size: 18px; font-weight: bold;
+            background-color: var(--steel-gray); color: var(--black); border: 2px solid var(--white); cursor: pointer; text-transform: uppercase; z-index: 10;
+        }
+        #submit-gun-btn:hover { background-color: var(--white); }
+
+        /* --- RANGE --- */
+        #target-board { position: absolute; top: 30%; left: 50%; transform: translateX(-50%); width: 200px; height: 200px; background: white; border: 5px solid black; border-radius: 50%; display: flex; justify-content: center; align-items: center; }
+        .bullseye { width: 50px; height: 50px; background: var(--accent-red); border-radius: 50%; }
+        #crosshair { position: absolute; border: 2px dashed var(--accent-red); border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; z-index: 10; }
+        .bullet-hole { position: absolute; width: 6px; height: 6px; background: var(--black); border-radius: 50%; transform: translate(-50%, -50%); z-index: 5; }
+
+        /* --- LEADERBOARD & END SCREENS --- */
+        .stats-table { width: 100%; max-width: 600px; border-collapse: collapse; margin-top: 20px; }
+        .stats-table th, .stats-table td { border: 1px solid var(--steel-gray); padding: 10px; text-align: center; }
+        .stats-table th { background-color: #333; }
+        #grade-display { font-size: 80px; font-weight: bold; margin: 10px 0; }
+        #name-input { padding: 10px; font-size: 18px; font-family: inherit; margin: 10px 0; background: #222; color: var(--white); border: 1px solid var(--steel-gray); text-align: center; }
+    </style>
+</head>
+<body>
+
+    <div id="start-screen" class="screen">
+        <h1>ADVANCED ARMORY</h1>
+        <button class="menu-btn" onclick="startGame()">Commence Shift</button>
+        <button class="menu-btn" onclick="showTutorial()">Tutorial</button>
+        <button class="menu-btn" onclick="showLeaderboard()">Armory Leaderboard</button>
+    </div>
+
+    <div id="tutorial-screen" class="screen">
+        <h1>HOW TO PLAY (STAGE 5)</h1>
+        <div style="max-width: 750px; line-height: 1.6; font-size: 16px; text-align: left;">
+            <p><strong>5 PARTS PER WEAPON:</strong> Assemble and maintain standard weapon configurations.</p>
+            <p><strong>INSPECTION:</strong> Deep dirt and bore blockages are invisible. Drag the <strong>INSPECT (i)</strong> lens over parts to zoom in and reveal hidden brown dirt spots or blockages.</p>
+            <p><strong>CLEANING PROTOCOL (Strict Order):</strong><br>
+            1. <strong>GRIME:</strong> Dip the <strong>CLOTH</strong> in the <strong>WATER BOWL</strong>, then scrub off brown surface rust/grime.<br>
+            2. <strong>DEEP DIRT:</strong> If the part is <strong>METAL</strong>, use the <strong>STEEL PICK</strong>. If it's <strong>NON-METAL</strong> (Wood/Polymer), scrub with the <strong>BRUSH</strong>.<br>
+            3. <strong>BORE BLOCKAGE:</strong> If the part is a <strong>BARREL</strong>, you must clear the inside by sliding the <strong>BRASS ROD</strong> into it.</p>
+            <p><strong>SCORING:</strong> S (1000pts), A (900pts), B (750pts), C (600pts), D (300pts), F (50pts).</p>
+        </div>
+        <button class="menu-btn" onclick="showStartScreen()">Back</button>
+    </div>
+
+    <div id="game-screen">
+        <div id="hud">
+            <div class="hud-element timer-text" id="timer">01:00</div>
+            <div class="hud-element score-text">Pts: <span id="total-score">0</span></div>
+            <div class="hud-element">Guns: <span id="guns-count">0</span></div>
+        </div>
+        <div id="instruction-text">Press [SPACEBAR] to test Bloom</div>
+
+        <div id="desk-view">
+            <div id="mat">
+                <div id="gun-type-display">PISTOL</div>
+                <div id="snap-zones-container"></div>
+            </div>
+            
+            <div id="scrap-bin" class="desk-station">SCRAP BIN</div>
+            <div id="parts-box" class="desk-station">PARTS BOX</div>
+            <div id="water-bowl" class="desk-station">WATER</div>
+            
+            <!-- Tool Rack -->
+            <div id="tool-rack">
+                <div style="font-size:12px; text-align:center; color:#aaa; font-weight:bold;">TOOLS</div>
+                <div class="tool-slot" id="slot-mag">
+                    <div id="tool-mag" class="cleaning-tool" data-tool="mag">
+                        <div id="mag-glass"><div id="mag-lens-content"></div></div>
+                        <div id="mag-handle"></div>
+                    </div>
+                </div>
+                <div class="tool-slot" id="slot-cloth"><div id="tool-cloth" class="cleaning-tool" data-tool="cloth">CLOTH</div></div>
+                <div class="tool-slot" id="slot-brush"><div id="tool-brush" class="cleaning-tool" data-tool="brush">BRUSH</div></div>
+                <div class="tool-slot" id="slot-pick"><div id="tool-pick" class="cleaning-tool" data-tool="pick">PICK</div></div>
+                <div class="tool-slot" id="slot-rod"><div id="tool-rod" class="cleaning-tool" data-tool="rod"></div></div>
+            </div>
+
+            <button id="submit-gun-btn" onclick="submitGun()">Send Out</button>
+            <div id="parts-container"></div>
+        </div>
+
+        <div id="range-view">
+            <div id="target-board"><div class="bullseye"></div></div>
+            <div id="crosshair"></div>
+            <div id="bullet-holes"></div>
+        </div>
+    </div>
+
+    <!-- Post Game Screens -->
+    <div id="gameover-screen" class="screen">
+        <h1>SHIFT COMPLETE</h1>
+        <h2 style="color: #ffd700; font-size: 36px;">Total Points: <span id="final-points">0</span></h2>
+        <h3>Average Quality: <span id="avg-score">0</span>%</h3>
+        <div id="grade-display">S</div>
+        <button class="menu-btn" onclick="showDetails()">View Gun Log</button>
+        <br><input type="text" id="name-input" placeholder="Enter ID" maxlength="10">
+        <button class="menu-btn" onclick="saveScore()">Log Record</button>
+    </div>
+    <div id="details-screen" class="screen">
+        <h1>WEAPON LOG</h1>
+        <div id="details-list" style="margin-bottom: 20px; max-height: 350px; overflow-y: auto; text-align: left; background: #111; padding: 20px; border: 1px solid #444;"></div>
+        <button class="menu-btn" onclick="document.getElementById('details-screen').style.display='none'; document.getElementById('gameover-screen').style.display='flex';">Back</button>
+    </div>
+    <div id="leaderboard-screen" class="screen">
+        <h1>ARMORY HALL OF FAME</h1>
+        <table class="stats-table" id="lb-table">
+            <tr><th>Rank</th><th>Name</th><th>Total Points</th><th>Avg Quality</th><th>Guns Fixed</th></tr>
+        </table>
+        <button class="menu-btn" onclick="showStartScreen()">Back to Menu</button>
+    </div>
+
+    <script>
+        // --- WEAPON DATABASE (5 Parts Each for Stage 5) ---
+        const weapons = {
+            pistol: {
+                name: 'Tactical Pistol', maxBloom: 300,
+                parts: [
+                    { id: 'slide', label: 'Slide', mat: 'metal', isBarrel: false, top: 50, left: 250, w: 200, h: 40, color: '#9da2a6' },
+                    { id: 'barrel', label: 'Barrel', mat: 'metal', isBarrel: true, top: 100, left: 250, w: 180, h: 20, color: '#333' },
+                    { id: 'frame', label: 'Frame', mat: 'metal', isBarrel: false, top: 150, left: 250, w: 200, h: 80, color: '#444' },
+                    { id: 'grip', label: 'Grip Panel', mat: 'non-metal', isBarrel: false, top: 240, left: 280, w: 60, h: 100, color: '#4a2107' },
+                    { id: 'mag', label: 'Magazine', mat: 'metal', isBarrel: false, top: 240, left: 360, w: 40, h: 90, color: '#222' }
+                ]
+            },
+            shotgun: {
+                name: 'Trench Shotgun', maxBloom: 500,
+                parts: [
+                    { id: 'stock', label: 'Stock', mat: 'non-metal', isBarrel: false, top: 100, left: 100, w: 150, h: 70, color: '#65350F' },
+                    { id: 'receiver', label: 'Receiver', mat: 'metal', isBarrel: false, top: 100, left: 260, w: 150, h: 60, color: '#2a2b2c' },
+                    { id: 'barrel', label: 'Barrel', mat: 'metal', isBarrel: true, top: 110, left: 420, w: 250, h: 20, color: '#333' },
+                    { id: 'magTube', label: 'Mag Tube', mat: 'metal', isBarrel: false, top: 140, left: 420, w: 230, h: 20, color: '#444' },
+                    { id: 'pump', label: 'Pump', mat: 'non-metal', isBarrel: false, top: 170, left: 420, w: 120, h: 40, color: '#65350F' }
+                ]
+            },
+            sniper: {
+                name: 'Marksman Rifle', maxBloom: 100,
+                parts: [
+                    { id: 'scope', label: 'Optics', mat: 'metal', isBarrel: false, top: 50, left: 250, w: 150, h: 40, color: '#111' },
+                    { id: 'bolt', label: 'Bolt Assembly', mat: 'metal', isBarrel: false, top: 100, left: 200, w: 80, h: 30, color: '#888' },
+                    { id: 'chassis', label: 'Chassis', mat: 'non-metal', isBarrel: false, top: 150, left: 100, w: 300, h: 70, color: '#4a4e52' },
+                    { id: 'barrel', label: 'Heavy Barrel', mat: 'metal', isBarrel: true, top: 160, left: 410, w: 250, h: 20, color: '#222' },
+                    { id: 'mag', label: 'Magazine', mat: 'metal', isBarrel: false, top: 230, left: 250, w: 60, h: 60, color: '#222' }
+                ]
+            }
+        };
+
+        let gameActive = false, timeLeft = 60, timerInterval, currentView = 'desk';
+        let currentWeaponKey = null, currentGunScore = 0, totalPoints = 0, fixedGunsLog = [];
+        let draggedElement = null, activeTool = null, isClothDamp = false;
+
+        const deskView = document.getElementById('desk-view'), rangeView = document.getElementById('range-view');
+        const partsContainer = document.getElementById('parts-container'), snapZonesContainer = document.getElementById('snap-zones-container');
+        const crosshair = document.getElementById('crosshair'), bulletHolesContainer = document.getElementById('bullet-holes');
+        const lensContent = document.getElementById('mag-lens-content');
+
+        // --- NAVIGATION ---
+        function hideAllScreens() { document.querySelectorAll('.screen, #game-screen').forEach(el => el.style.display = 'none'); }
+        function showStartScreen() { hideAllScreens(); document.getElementById('start-screen').style.display = 'flex'; }
+        function showTutorial() { hideAllScreens(); document.getElementById('tutorial-screen').style.display = 'flex'; }
+
+        // --- INITIALIZATION ---
+        function startGame() {
+            hideAllScreens();
+            document.getElementById('game-screen').style.display = 'block';
+            deskView.style.display = 'flex'; rangeView.style.display = 'none';
+            
+            timeLeft = 60; totalPoints = 0; fixedGunsLog = [];
+            document.getElementById('guns-count').innerText = "0";
+            document.getElementById('total-score').innerText = "0";
+            
+            gameActive = true;
+            timerInterval = setInterval(updateTimer, 1000);
+            
+            setupTools();
+            spawnNewGun();
+            document.getElementById('parts-box').onmousedown = spawnFreshPart;
+        }
+
+        function updateTimer() {
+            if(!gameActive) return;
+            timeLeft--;
+            document.getElementById('timer').innerText = `00:${timeLeft < 10 ? '0'+timeLeft : timeLeft}`;
+            if(timeLeft <= 0) { gameActive = false; clearInterval(timerInterval); triggerGameOver(); }
+        }
+
+        // --- DESK MECHANICS ---
+        function spawnNewGun() {
+            partsContainer.innerHTML = ''; bulletHolesContainer.innerHTML = ''; snapZonesContainer.innerHTML = '';
+            const keys = Object.keys(weapons);
+            currentWeaponKey = keys[Math.floor(Math.random() * keys.length)];
+            const weapon = weapons[currentWeaponKey];
+            
+            document.getElementById('gun-type-display').innerText = weapon.name;
+
+            // Generate states for 5 parts
+            let states = ['dirty', 'dirty', 'dirty', 'broken', 'ok']; 
+            states.sort(() => Math.random() - 0.5);
+
+            weapon.parts.forEach((partDef, index) => {
+                const zone = document.createElement('div');
+                zone.className = 'snap-zone'; zone.dataset.type = partDef.id; zone.innerText = partDef.label;
+                zone.style.top = partDef.top + 'px'; zone.style.left = partDef.left + 'px';
+                zone.style.width = partDef.w + 'px'; zone.style.height = partDef.h + 'px';
+                snapZonesContainer.appendChild(zone);
+                createPart(partDef, states[index]);
+            });
+        }
+
+        function createPart(partDef, baseState, isFresh = false) {
+            const part = document.createElement('div');
+            part.classList.add('gun-part');
+            part.dataset.type = partDef.id; part.innerText = partDef.label;
+            part.dataset.mat = partDef.mat;
+            part.dataset.isBarrel = partDef.isBarrel;
+            
+            part.style.width = partDef.w + 'px'; part.style.height = partDef.h + 'px';
+            part.style.backgroundColor = partDef.color;
+
+            const overlay = document.createElement('div');
+            overlay.className = 'status-overlay';
+            part.appendChild(overlay);
+
+            if(baseState === 'broken') {
+                part.classList.add('state-broken');
+                part.dataset.state = 'broken';
+            } else if(baseState === 'dirty') {
+                part.dataset.state = 'dirty';
+                part.dataset.cleanStage = "1";
+                part.dataset.dirtLevel = 100;
+                part.classList.add('state-dirty');
+                part.classList.add('dirt-stage-1');
+            } else {
+                part.dataset.state = 'ok';
+                part.dataset.cleanStage = "clean";
+            }
+            
+            if(isFresh) {
+                part.style.top = '100px'; part.style.left = '160px'; 
+            } else {
+                part.style.top = (Math.random() * 150 + 250) + 'px';
+                part.style.left = (Math.random() * 300 + 200) + 'px';
+            }
+            
+            setupPartDraggable(part);
+            partsContainer.appendChild(part);
+        }
+
+        function spawnFreshPart(e) {
+            if(!gameActive) return;
+            const weapon = weapons[currentWeaponKey];
+            const existingTypes = Array.from(document.querySelectorAll('.gun-part')).map(p => p.dataset.type);
+            const neededDef = weapon.parts.find(p => !existingTypes.includes(p.id));
+            if(neededDef) createPart(neededDef, 'ok', true);
+        }
+
+        // --- PART DRAG LOGIC ---
+        function setupPartDraggable(el) {
+            el.onmousedown = function(e) {
+                if(!gameActive || activeTool) return;
+                draggedElement = el;
+                let shiftX = e.clientX - el.getBoundingClientRect().left;
+                let shiftY = e.clientY - el.getBoundingClientRect().top;
+                el.style.zIndex = 100;
+
+                function moveAt(pageX, pageY) {
+                    el.style.left = pageX - shiftX + 'px';
+                    el.style.top = pageY - shiftY + 'px';
+                }
+                function onMouseMove(ev) { moveAt(ev.pageX, ev.pageY); }
+                document.addEventListener('mousemove', onMouseMove);
+
+                function onMouseUp(ev) {
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                    draggedElement = null; el.style.zIndex = 10;
+                    checkPartDrop(el);
+                }
+                document.addEventListener('mouseup', onMouseUp);
+            };
+            el.ondragstart = function() { return false; };
+        }
+
+        function checkPartDrop(el) {
+            const elRect = el.getBoundingClientRect();
+            const cx = elRect.left + elRect.width / 2;
+            const cy = elRect.top + elRect.height / 2;
+
+            const scrapBin = document.getElementById('scrap-bin').getBoundingClientRect();
+            if(cx > scrapBin.left && cx < scrapBin.right && cy > scrapBin.top && cy < scrapBin.bottom) {
+                if(el.dataset.state === 'broken') el.remove();
+                return;
+            }
+            
+            const zones = document.querySelectorAll('.snap-zone');
+            let snapped = false;
+            zones.forEach(zone => {
+                const rect = zone.getBoundingClientRect();
+                if(el.dataset.type === zone.dataset.type && cx > rect.left && cx < rect.right && cy > rect.top && cy < rect.bottom) {
+                    el.style.left = rect.left + 'px'; el.style.top = rect.top + 'px';
+                    el.dataset.snapped = "true"; snapped = true;
+                }
+            });
+            if(!snapped) el.dataset.snapped = "false";
+        }
+
+        // --- MULTI-STAGE TOOL CLEANING & LENS ---
+        function setupTools() {
+            document.querySelectorAll('.cleaning-tool').forEach(tool => {
+                tool.onmousedown = function(e) {
+                    if(!gameActive || activeTool || draggedElement) return; 
+                    
+                    activeTool = tool;
+                    const slot = document.getElementById('slot-' + tool.dataset.tool);
+                    const rect = tool.getBoundingClientRect();
+                    const deskRect = deskView.getBoundingClientRect();
+                    
+                    let shiftX = e.clientX - rect.left;
+                    let shiftY = e.clientY - rect.top;
+
+                    deskView.appendChild(tool);
+                    tool.style.left = (e.clientX - deskRect.left - shiftX) + 'px';
+                    tool.style.top = (e.clientY - deskRect.top - shiftY) + 'px';
+                    tool.style.zIndex = 1000;
+
+                    function onMouseMove(ev) {
+                        tool.style.left = (ev.clientX - deskRect.left - shiftX) + 'px';
+                        tool.style.top = (ev.clientY - deskRect.top - shiftY) + 'px';
+                        
+                        const tRect = tool.getBoundingClientRect();
+                        const cx = tRect.left + tRect.width/2;
+                        const cy = tRect.top + tRect.height/2;
+                        const toolType = tool.dataset.tool;
+
+                        // Check Water Bowl
+                        if(toolType === 'cloth') {
+                            const water = document.getElementById('water-bowl').getBoundingClientRect();
+                            if(cx > water.left && cx < water.right && cy > water.top && cy < water.bottom) {
+                                isClothDamp = true; tool.classList.add('cloth-damp');
+                            }
+                        }
+
+                        let isOverBarrel = false;
+                        let hoveredPart = null;
+
+                        if(toolType === 'mag') {
+                            document.querySelectorAll('.gun-part').forEach(p => p.classList.remove('revealed'));
+                        }
+
+                        // Check Parts Collision for cleaning / inspecting
+                        document.querySelectorAll('.gun-part').forEach(part => {
+                            const pr = part.getBoundingClientRect();
+                            if(cx > pr.left && cx < pr.right && cy > pr.top && cy < pr.bottom) {
+                                
+                                hoveredPart = part;
+
+                                if(toolType !== 'mag' && part.dataset.state === 'dirty') {
+                                    processCleaning(part, toolType);
+                                }
+
+                                if(toolType === 'rod' && part.dataset.isBarrel === "true") {
+                                    isOverBarrel = true;
+                                }
+                            }
+                        });
+
+                        // MAGNIFYING LENS LOGIC
+                        if(toolType === 'mag') {
+                            if(hoveredPart) {
+                                const pr = hoveredPart.getBoundingClientRect();
+                                const relX = cx - pr.left;
+                                const relY = cy - pr.top;
+
+                                lensContent.style.display = 'block';
+                                lensContent.style.width = pr.width + 'px';
+                                lensContent.style.height = pr.height + 'px';
+                                lensContent.style.backgroundColor = hoveredPart.style.backgroundColor;
+                                
+                                lensContent.className = '';
+                                
+                                if (hoveredPart.dataset.cleanStage === "2") lensContent.classList.add('lens-deep-dirt');
+                                else if (hoveredPart.dataset.cleanStage === "3") lensContent.classList.add('lens-blocked');
+
+                                const zoom = 2.5;
+                                const radius = 35;
+                                const tx = radius - (relX * zoom);
+                                const ty = radius - (relY * zoom);
+                                lensContent.style.transform = `translate(${tx}px, ${ty}px) scale(${zoom})`;
+                            } else {
+                                lensContent.style.display = 'none';
+                            }
+                        }
+
+                        // Visual illusion: Rod goes "inside" the barrel
+                        if(toolType === 'rod') {
+                            tool.style.zIndex = isOverBarrel ? 9 : 1000; 
+                        }
+                    }
+                    
+                    document.addEventListener('mousemove', onMouseMove);
+                    
+                    function onMouseUp(ev) {
+                        document.removeEventListener('mousemove', onMouseMove);
+                        document.removeEventListener('mouseup', onMouseUp);
+                        
+                        slot.appendChild(tool);
+                        tool.style.left = ''; tool.style.top = ''; tool.style.position = ''; 
+                        tool.style.zIndex = 30;
+                        activeTool = null;
+                        
+                        if(tool.dataset.tool === 'cloth') {
+                            isClothDamp = false; tool.classList.remove('cloth-damp');
+                        }
+                        if(tool.dataset.tool === 'mag') {
+                            lensContent.style.display = 'none';
+                        }
+                    }
+                    document.addEventListener('mouseup', onMouseUp);
+                };
+                tool.ondragstart = function() { return false; };
+            });
+        }
+
+        function processCleaning(part, toolType) {
+            const stage = part.dataset.cleanStage;
+            let dirt = parseInt(part.dataset.dirtLevel);
+            let effectApplied = false;
+
+            if (stage === "1") {
+                if (toolType === 'cloth' && isClothDamp) { dirt -= 3; effectApplied = true; }
+            } 
+            else if (stage === "2") {
+                if (part.dataset.mat === 'metal' && toolType === 'pick') { dirt -= 3; effectApplied = true; }
+                else if (part.dataset.mat === 'non-metal' && toolType === 'brush') { dirt -= 3; effectApplied = true; }
+            }
+            else if (stage === "3") {
+                if (toolType === 'rod') { dirt -= 3; effectApplied = true; }
+            }
+
+            if(effectApplied) {
+                if (dirt <= 0) {
+                    advanceDirtStage(part);
+                } else {
+                    part.dataset.dirtLevel = dirt;
+                    part.style.setProperty('--dirt-op', dirt / 100);
+                }
+            }
+        }
+
+        function advanceDirtStage(part) {
+            part.dataset.dirtLevel = 100;
+            part.style.setProperty('--dirt-op', 1);
+            const currentStage = part.dataset.cleanStage;
+
+            if(currentStage === "1") {
+                part.classList.remove('dirt-stage-1');
+                part.dataset.cleanStage = "2";
+            } 
+            else if (currentStage === "2") {
+                if(part.dataset.isBarrel === "true") {
+                    part.dataset.cleanStage = "3";
+                } else {
+                    part.dataset.cleanStage = "clean";
+                    part.classList.remove('state-dirty');
+                    part.dataset.state = 'ok';
+                }
+            }
+            else if (currentStage === "3") {
+                part.dataset.cleanStage = "clean";
+                part.classList.remove('state-dirty');
+                part.dataset.state = 'ok';
+            }
+        }
+
+        // --- VIEW TOGGLING & RANGE ---
+        window.addEventListener('keydown', (e) => {
+            if(e.code === 'Space' && gameActive) {
+                e.preventDefault();
+                calculateCurrentGunScore();
+                if(currentView === 'desk') {
+                    currentView = 'range'; deskView.style.display = 'none'; rangeView.style.display = 'block';
+                    document.getElementById('instruction-text').innerText = "Press [SPACEBAR] to return to Desk";
+                    updateCrosshairSize();
+                } else {
+                    currentView = 'desk'; rangeView.style.display = 'none'; deskView.style.display = 'flex';
+                    document.getElementById('instruction-text').innerText = "Press [SPACEBAR] to test Bloom";
+                }
+            }
+        });
+
+        function updateCrosshairSize() {
+            const weapon = weapons[currentWeaponKey];
+            let size = 5 + ((100 - currentGunScore) / 100) * weapon.maxBloom;
+            crosshair.style.width = size + 'px'; crosshair.style.height = size + 'px';
+        }
+
+        rangeView.addEventListener('mousemove', (e) => {
+            if(currentView !== 'range') return;
+            crosshair.style.left = e.clientX + 'px'; crosshair.style.top = e.clientY + 'px';
+        });
+
+        rangeView.addEventListener('mousedown', (e) => {
+            if(currentView !== 'range' || !gameActive) return;
+            let radius = Math.random() * (parseInt(crosshair.style.width) / 2);
+            let angle = Math.random() * Math.PI * 2;
+            const hole = document.createElement('div');
+            hole.classList.add('bullet-hole');
+            hole.style.left = (e.clientX + radius * Math.cos(angle)) + 'px';
+            hole.style.top = (e.clientY + radius * Math.sin(angle)) + 'px';
+            bulletHolesContainer.appendChild(hole);
+        });
+
+        // --- SCORING & POINT CALCULATION ---
+        function calculateCurrentGunScore() {
+            let score = 0;
+            const weaponDef = weapons[currentWeaponKey];
+            const parts = Array.from(document.querySelectorAll('.gun-part'));
+            let partsSnapped = 0;
+            const scorePerPart = 100 / weaponDef.parts.length;
+
+            weaponDef.parts.forEach(def => {
+                const partObj = parts.find(p => p.dataset.type === def.id && p.dataset.snapped === "true");
+                if(partObj) {
+                    partsSnapped++;
+                    if(partObj.dataset.state === 'ok') score += scorePerPart;
+                    else if(partObj.dataset.state === 'dirty') {
+                        if(partObj.dataset.cleanStage === "2") score += (scorePerPart * 0.3);
+                        if(partObj.dataset.cleanStage === "3") score += (scorePerPart * 0.6);
+                    }
+                }
+            });
+
+            if(partsSnapped < weaponDef.parts.length) score -= 40; 
+            currentGunScore = Math.max(0, Math.min(100, Math.round(score)));
+        }
+
+        function getPointsForGrade(score) {
+            if (score >= 95) return 1000;         // S
+            if (score >= 90) return 900;          // A
+            if (score >= 80) return 750;          // B
+            if (score >= 70) return 600;          // C
+            if (score >= 60) return 300;          // D
+            return 50;                            // F
+        }
+
+        function submitGun() {
+            calculateCurrentGunScore();
+            let pointsEarned = getPointsForGrade(currentGunScore);
+            totalPoints += pointsEarned;
+            fixedGunsLog.push({ name: weapons[currentWeaponKey].name, accuracy: currentGunScore, points: pointsEarned });
+            
+            document.getElementById('guns-count').innerText = fixedGunsLog.length;
+            document.getElementById('total-score').innerText = totalPoints;
+            spawnNewGun();
+        }
+
+        // --- POST GAME ---
+        function triggerGameOver() {
+            hideAllScreens(); document.getElementById('gameover-screen').style.display = 'flex';
+            let totalAcc = fixedGunsLog.reduce((a, b) => a + b.accuracy, 0);
+            let avgAcc = fixedGunsLog.length > 0 ? Math.round(totalAcc / fixedGunsLog.length) : 0;
+            
+            document.getElementById('final-points').innerText = totalPoints;
+            document.getElementById('avg-score').innerText = avgAcc;
+            
+            let grade = "F", color = "var(--accent-red)";
+            if (avgAcc >= 95) { grade = "S"; color = "#ffd700"; }
+            else if (avgAcc >= 90) { grade = "A"; color = "#00ff00"; }
+            else if (avgAcc >= 80) { grade = "B"; color = "#00ffff"; }
+            else if (avgAcc >= 70) { grade = "C"; color = "#ffffff"; }
+            else if (avgAcc >= 60) { grade = "D"; color = "#ff8c00"; }
+
+            const gd = document.getElementById('grade-display');
+            gd.innerText = grade; gd.style.color = color;
+        }
+
+        function showDetails() {
+            hideAllScreens(); document.getElementById('details-screen').style.display = 'flex';
+            const list = document.getElementById('details-list');
+            list.innerHTML = '';
+            fixedGunsLog.forEach((log, i) => {
+                let p = document.createElement('div');
+                p.style.marginBottom = '10px'; p.style.fontSize = '18px'; p.style.borderBottom = '1px solid #333'; p.style.paddingBottom = '5px';
+                p.innerHTML = `<span style="color:#777">Order #${i+1}</span>: <strong>${log.name}</strong> <br> Accuracy: <span style="color:${log.accuracy >= 90 ? '#0f0' : log.accuracy < 60 ? '#f00' : '#fff'}">${log.accuracy}%</span> | Awarded: <span style="color:#ffd700">${log.points} Pts</span>`;
+                list.appendChild(p);
+            });
+            if(fixedGunsLog.length === 0) list.innerHTML = "<p>No orders fulfilled.</p>";
+        }
+
+        function saveScore() {
+            let name = document.getElementById('name-input').value.trim() || "Armorer";
+            let totalAcc = fixedGunsLog.reduce((a, b) => a + b.accuracy, 0);
+            let avg = fixedGunsLog.length > 0 ? Math.round(totalAcc / fixedGunsLog.length) : 0;
+
+            let lb = JSON.parse(localStorage.getItem('bloomStage5Leaderboard')) || [];
+            lb.push({ name, pts: totalPoints, avg, count: fixedGunsLog.length });
+            lb.sort((a, b) => b.pts - a.pts);
+            lb = lb.slice(0, 10);
+            localStorage.setItem('bloomStage5Leaderboard', JSON.stringify(lb));
+            showLeaderboard();
+        }
+
+        function showLeaderboard() {
+            hideAllScreens(); document.getElementById('leaderboard-screen').style.display = 'flex';
+            const table = document.getElementById('lb-table');
+            table.innerHTML = `<tr><th>Rank</th><th>Name</th><th>Total Points</th><th>Avg Quality</th><th>Fixed</th></tr>`;
+            
+            let lb = JSON.parse(localStorage.getItem('bloomStage5Leaderboard')) || [];
+            lb.forEach((e, i) => {
+                let row = document.createElement('tr');
+                row.innerHTML = `<td>${i + 1}</td><td>${e.name}</td><td style="color:#ffd700; font-weight:bold;">${e.pts}</td><td>${e.avg}%</td><td>${e.count}</td>`;
+                table.appendChild(row);
+            });
+        }
+    </script>
+</body>
+</html>
